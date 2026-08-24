@@ -55,7 +55,7 @@ fn signer(ctx: &Ctx, i: u32) -> Address {
 }
 
 fn desc(env: &Env) -> Symbol {
-    Symbol::new(&env, "raise platform fee to 2.5%")
+    Symbol::new(&env, "raise_platform_fee_to_2_5_")
 }
 
 // ── Configuration ──────────────────────────────────────────────────────────
@@ -424,7 +424,7 @@ fn test_treasury_transfer_executes_on_threshold() {
 
     let id = ctx.client.multisig_propose(
         &signer(&ctx, 0),
-        &Symbol::new(&env, "pay grant"),
+        &Symbol::new(&env, "pay_grant"),
         &MultisigAction::TreasuryTransfer(ctx.token.clone(), recipient.clone(), 400),
     );
 
@@ -491,7 +491,7 @@ fn test_signer_rotation_via_proposal() {
 
     let id = ctx.client.multisig_propose(
         &signer(&ctx, 0),
-        &Symbol::new(&env, "rotate signers"),
+        &Symbol::new(&env, "rotate_signers"),
         &MultisigAction::SetSigners(new_set, 2),
     );
 

@@ -5,7 +5,7 @@ use crate::{TaskManagerContract, TaskManagerContractClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, Env, String, Vec};
+use soroban_sdk::{Address, Env, String, Symbol, Vec};
 
 // ── Shared setup helper ────────────────────────────────────────────────────
 
@@ -46,12 +46,12 @@ fn setup_vesting_vault(
     token_admin.mint(creator, &(milestone_amount * 2));
 
     let mut tags = Vec::new(env);
-    tags.push_back(String::from_str(env, "test"));
+    tags.push_back(Symbol::new(env, "test"));
 
     let task_id = client.create_task(
         creator,
-        &String::from_str(env, "Test Task"),
-        &String::from_str(env, "Task with milestone"),
+        &Symbol::new(env, "Test_Task"),
+        &Symbol::new(env, "Task_with_milestone"),
         &milestone_amount,
         &tags,
     );
@@ -60,7 +60,7 @@ fn setup_vesting_vault(
 
     // Create milestone via escrow module within contract context
     let e = env.clone();
-    let ms_title = String::from_str(env, "Milestone 1");
+    let ms_title = Symbol::new(env, "Milestone_1");
     env.as_contract(contract_id, move || {
         crate::escrow::create_milestone(e, task_id, ms_title, milestone_amount, None);
     });
@@ -70,7 +70,7 @@ fn setup_vesting_vault(
         assignee,
         &task_id,
         &1,
-        &String::from_str(env, "https://github.com/pr/1"),
+        &Symbol::new(env, "https___github_com_pr_1"),
     );
 
     // Approve milestone with vesting
@@ -449,12 +449,12 @@ fn test_cannot_create_vault_for_non_approved_milestone() {
     token_admin.mint(&creator, &1000);
 
     let mut tags = Vec::new(&env);
-    tags.push_back(String::from_str(&env, "test"));
+    tags.push_back(Symbol::new(&env, "test"));
 
     let task_id = client.create_task(
         &creator,
-        &String::from_str(&env, "Test Task"),
-        &String::from_str(&env, "Task with milestone"),
+        &Symbol::new(&env, "Test_Task"),
+        &Symbol::new(&env, "Task_with_milestone"),
         &500,
         &tags,
     );
@@ -463,7 +463,7 @@ fn test_cannot_create_vault_for_non_approved_milestone() {
 
     // Create milestone but don't approve it
     let e = env.clone();
-    let ms_title = String::from_str(&env, "Milestone 1");
+    let ms_title = Symbol::new(&env, "Milestone_1");
     env.as_contract(&contract_id, move || {
         crate::escrow::create_milestone(e, task_id, ms_title, 500, None);
     });
@@ -537,12 +537,12 @@ fn test_multiple_vaults_different_milestones() {
     token_admin.mint(&creator, &2000);
 
     let mut tags = Vec::new(&env);
-    tags.push_back(String::from_str(&env, "test"));
+    tags.push_back(Symbol::new(&env, "test"));
 
     let task_id = client.create_task(
         &creator,
-        &String::from_str(&env, "Multi-Milestone Task"),
-        &String::from_str(&env, "Task with multiple milestones"),
+        &Symbol::new(&env, "Multi_Milestone_Task"),
+        &Symbol::new(&env, "Task_with_multiple_milestones"),
         &1200,
         &tags,
     );
@@ -551,8 +551,8 @@ fn test_multiple_vaults_different_milestones() {
 
     // Create two milestones
     let e = env.clone();
-    let ms1_title = String::from_str(&env, "Milestone 1");
-    let ms2_title = String::from_str(&env, "Milestone 2");
+    let ms1_title = Symbol::new(&env, "Milestone_1");
+    let ms2_title = Symbol::new(&env, "Milestone_2");
     env.as_contract(&contract_id, move || {
         crate::escrow::create_milestone(e.clone(), task_id, ms1_title, 500, None);
         crate::escrow::create_milestone(e, task_id, ms2_title, 700, None);
@@ -563,7 +563,7 @@ fn test_multiple_vaults_different_milestones() {
         &assignee,
         &task_id,
         &1,
-        &String::from_str(&env, "https://github.com/pr/1"),
+        &Symbol::new(&env, "https___github_com_pr_1"),
     );
 
     let vesting_period = 86400u64; // 24 hours
@@ -579,7 +579,7 @@ fn test_multiple_vaults_different_milestones() {
         &assignee,
         &task_id,
         &2,
-        &String::from_str(&env, "https://github.com/pr/2"),
+        &Symbol::new(&env, "https___github_com_pr_2"),
     );
 
     let vault_id_2 = client.approve_milestone_with_vesting(
