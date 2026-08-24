@@ -204,6 +204,32 @@ fn validate_route(env: &Env, config: &RouterConfig, token_in: &Address, route: &
     get_approved_stablecoins(env.clone()).contains(&stablecoin_out)
 }
 
+fn validate_route_to_target(
+    config: &RouterConfig,
+    token_in: &Address,
+    target_token: &Address,
+    route: &SwapRoute,
+) -> bool {
+    let hops = route.pools.len();
+
+    if hops == 0 || route.path.len() != hops + 1 {
+        return false;
+    }
+    if hops > config.max_hops {
+        return false;
+    }
+
+    match route.path.get(0) {
+        Some(first) if &first == token_in => {}
+        _ => return false,
+    }
+
+    match route.path.get(route.path.len() - 1) {
+        Some(last) => &last == target_token,
+        None => false,
+    }
+}
+
 // ============================================================================
 // Multi-hop swap execution wrapper
 // ============================================================================
@@ -276,6 +302,89 @@ pub fn withdraw_stablecoin(env: Env, owner: Address, stablecoin: Address, amount
         &owner,
         &amount,
     );
+}
+
+// ============================================================================
+// Escrow-funding entrypoint
+// ============================================================================
+
+// Swaps an arbitrary input token into `target_token` (the caller's canonical
+// escrow currency) atomically, guarded by the same oracle-derived slippage
+// check as `convert_incoming_deposit`. Unlike `convert_incoming_deposit`,
+// the output is left in the contract's own balance — ready to fund an
+// escrow lock directly — rather than credited to a per-owner vault, and the
+// route's destination must match `target_token` exactly rather than any
+// approved stablecoin.
+//
+// Auth: the caller is expected to have already authorized `sender` for this
+// invocation (e.g. via `sender.require_auth()` in the task-creation entry
+// point), mirroring how `create_task`'s own token transfer relies on the
+// caller's up-front `require_auth`.
+pub fn swap_for_funding(
+    env: Env,
+    sender: Address,
+    token_in: Address,
+    amount_in: i128,
+    route: SwapRoute,
+    target_token: Address,
+    slippage_bps: Option<u32>,
+) -> i128 {
+    if amount_in <= 0 {
+        panic!();
+    }
+
+    let config = get_config(env.clone());
+    let slippage = slippage_bps.unwrap_or(config.default_slippage_bps);
+    if slippage as i128 > BPS_DENOMINATOR {
+        panic!();
+    }
+
+    if !validate_route_to_target(&config, &token_in, &target_token, &route) {
+        update_stats(&env, 0, 1, 0);
+        panic!();
+    }
+
+    let oracle = OracleClient::new(&env, &config.oracle);
+    let price_in = match oracle.try_price(&token_in) {
+        Ok(Ok(Some(p))) if p > 0 => p,
+        _ => {
+            update_stats(&env, 0, 1, 0);
+            panic!();
+        }
+    };
+    let price_out = match oracle.try_price(&target_token) {
+        Ok(Ok(Some(p))) if p > 0 => p,
+        _ => {
+            update_stats(&env, 0, 1, 0);
+            panic!();
+        }
+    };
+
+    // Minimum acceptable output derived from oracle prices, guarding the
+    // conversion against a manipulated/thin DEX pool price.
+    let expected_out = amount_in
+        .checked_mul(price_in)
+        .unwrap_optimized()
+        / price_out;
+    let min_out = expected_out * (BPS_DENOMINATOR - slippage as i128) / BPS_DENOMINATOR;
+
+    // Route and pricing are validated — now, and only now, pull the deposit.
+    soroban_sdk::token::Client::new(&env, &token_in).transfer(
+        &sender,
+        &env.current_contract_address(),
+        &amount_in,
+    );
+
+    let vault = env.current_contract_address();
+    let amount_out = execute_route(&env, &route, amount_in, &vault);
+
+    if amount_out < min_out {
+        panic!();
+    }
+
+    update_stats(&env, 1, 0, amount_out);
+
+    amount_out
 }
 
 // ============================================================================
