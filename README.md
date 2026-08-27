@@ -47,6 +47,7 @@ This repository contains the Soroban smart contract powering the LatterFix TaskM
 | **Governance** | `governance.rs` | Proposal and voting system for protocol decisions |
 | **Pausable** | `pausable.rs` | Emergency pause functionality per action type |
 | **Reputation** | `reputation.rs` | User reputation and tier system |
+| **Social Recovery** | `social_recovery.rs` | Threshold admin-role recovery by Master/Legend guardians |
 | **Storage** | `storage.rs` | Storage optimization and TTL management utilities |
 | **User Profile** | `user_profile.rs` | User profiles with reputation tracking |
 
@@ -90,6 +91,12 @@ This repository contains the Soroban smart contract powering the LatterFix TaskM
 - Pause/unpause specific actions
 - Emergency circuit breaker
 - Admin-only control
+
+### 7. Social Recovery
+- Emergency admin-role rotation when the admin key is lost or compromised
+- Threshold approval by Master/Legend tier guardians (default 3)
+- State machine (Pending → Approved → Executed) with TTL expiry and admin veto
+- Approvals re-validated against live tiers and admin at execution time
 
 ---
 

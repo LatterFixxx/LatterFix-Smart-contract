@@ -487,3 +487,43 @@ pub fn emit_vesting_claimed(
         (beneficiary, amount, total_claimed, env.ledger().timestamp()),
     );
 }
+
+// ── Social Recovery Events ────────────────────────────────────────────────
+
+pub fn emit_recovery_proposed(
+    env: &Env,
+    recovery_id: u32,
+    proposer: Address,
+    proposed_admin: Address,
+) {
+    env.events().publish(
+        (symbol_short!("rec_prop"), recovery_id),
+        (proposer, proposed_admin, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_recovery_approved(env: &Env, recovery_id: u32, guardian: Address, status: u32) {
+    env.events().publish(
+        (symbol_short!("rec_appr"), (recovery_id, guardian)),
+        (status, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_recovery_executed(
+    env: &Env,
+    recovery_id: u32,
+    old_admin: Address,
+    new_admin: Address,
+) {
+    env.events().publish(
+        (symbol_short!("rec_exec"), recovery_id),
+        (old_admin, new_admin, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_recovery_cancelled(env: &Env, recovery_id: u32, caller: Address) {
+    env.events().publish(
+        (symbol_short!("rec_cancl"), recovery_id),
+        (caller, env.ledger().timestamp()),
+    );
+}
