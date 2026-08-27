@@ -488,6 +488,28 @@ pub fn emit_vesting_claimed(
     );
 }
 
+// ── Gasless Assignment Events ─────────────────────────────────────────────
+
+pub fn emit_signing_key_registered(env: &Env, contributor: Address, set_by: Address) {
+    env.events().publish(
+        (symbol_short!("gl_key"), contributor),
+        (set_by, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_gasless_assignment(
+    env: &Env,
+    task_id: u32,
+    contributor: Address,
+    relayer: Address,
+    nonce: u64,
+) {
+    env.events().publish(
+        (symbol_short!("gl_assign"), task_id),
+        (contributor, relayer, nonce, env.ledger().timestamp()),
+    );
+}
+
 // ── Social Recovery Events ────────────────────────────────────────────────
 
 pub fn emit_recovery_proposed(

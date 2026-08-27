@@ -5,6 +5,7 @@ pub mod access_control;
 pub mod benchmark;
 pub mod escrow;
 pub mod events;
+pub mod gasless;
 pub mod governance;
 pub mod merkle;
 pub mod multisig;
@@ -41,9 +42,13 @@ mod vesting_vault_test;
 #[cfg(test)]
 mod batch_test;
 #[cfg(test)]
+mod gasless_test;
+#[cfg(test)]
 mod social_recovery_test;
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec,
+};
 
 // ============================================================================
 // Task Management Types
@@ -573,23 +578,7 @@ impl TaskManagerContract {
             Some(assignee.clone()),
         );
 
-        let mut task: Task = env
-            .storage()
-            .instance()
-            .get(&DataKey::Task(task_id))
-            .unwrap_optimized();
-
-        if task.status != TaskStatus::Open {
-            panic!();
-        }
-
-        task.assignee = Some(assignee.clone());
-        task.status = TaskStatus::InProgress;
-        task.updated_at = env.ledger().timestamp();
-
-        env.storage().instance().set(&DataKey::Task(task_id), &task);
-
-        events::emit_task_assigned(&env, task_id, assignee);
+        apply_task_assignment(&env, task_id, assignee);
     }
 
     pub fn submit_work(env: Env, assignee: Address, task_id: u32, delivery_url: Symbol) {
@@ -1810,6 +1799,53 @@ impl TaskManagerContract {
     pub fn get_treasury_allocated(env: Env) -> i128 {
         treasury::get_allocated_total(&env)
     }
+
+    // ========================================================================
+    // Gasless (signature-based) Task Assignment
+    // ========================================================================
+
+    /// Contributor self-registers (or rotates) the Ed25519 public key that
+    /// authorizes their gasless task assignments.
+    pub fn register_signing_key(env: Env, contributor: Address, public_key: BytesN<32>) {
+        gasless::register_signing_key(env, contributor, public_key);
+    }
+
+    /// Admin registers a contributor's Ed25519 public key on their behalf, so
+    /// the contributor never has to pay gas — not even to onboard.
+    pub fn admin_set_signing_key(
+        env: Env,
+        admin: Address,
+        contributor: Address,
+        public_key: BytesN<32>,
+    ) {
+        gasless::admin_set_signing_key(env, admin, contributor, public_key);
+    }
+
+    /// The Ed25519 public key registered for `contributor`, if any.
+    pub fn get_signing_key(env: Env, contributor: Address) -> Option<BytesN<32>> {
+        gasless::get_signing_key(&env, &contributor)
+    }
+
+    /// The next nonce `contributor` must embed in a gasless-assignment message.
+    pub fn get_assignment_nonce(env: Env, contributor: Address) -> u64 {
+        gasless::get_assignment_nonce(&env, &contributor)
+    }
+
+    /// The exact byte string a contributor must sign to authorize `request`.
+    pub fn gasless_assignment_payload(env: Env, request: gasless::GaslessAssignment) -> Bytes {
+        gasless::assignment_payload(&env, request)
+    }
+
+    /// Relayer-submitted, Ed25519-signature-authorized task assignment. Only
+    /// `relayer` authorizes the transaction and pays fees.
+    pub fn assign_task_gasless(
+        env: Env,
+        relayer: Address,
+        request: gasless::GaslessAssignment,
+        signature: BytesN<64>,
+    ) {
+        gasless::assign_task_gasless(env, relayer, request, signature);
+    }
 }
 
 // ============================================================================
@@ -1911,6 +1947,30 @@ pub fn resolve_dispute_split(
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Move an `Open` task to `InProgress` and record `assignee`. Shared by the
+/// interactive [`TaskManagerContract::assign_task`] entry point and the gasless
+/// [`gasless::assign_task_gasless`] path. Callers are responsible for
+/// authorization and pause checks; this performs only the state transition.
+pub(crate) fn apply_task_assignment(env: &Env, task_id: u32, assignee: Address) {
+    let mut task: Task = env
+        .storage()
+        .instance()
+        .get(&DataKey::Task(task_id))
+        .unwrap_optimized();
+
+    if task.status != TaskStatus::Open {
+        panic!();
+    }
+
+    task.assignee = Some(assignee.clone());
+    task.status = TaskStatus::InProgress;
+    task.updated_at = env.ledger().timestamp();
+
+    env.storage().instance().set(&DataKey::Task(task_id), &task);
+
+    events::emit_task_assigned(env, task_id, assignee);
+}
 
 fn format_role(env: &Env, role: &access_control::Role) -> Symbol {
     match role {

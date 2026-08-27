@@ -44,6 +44,7 @@ This repository contains the Soroban smart contract powering the LatterFix TaskM
 | **Access Control** | `access_control.rs` | Role-based access control (RBAC) system |
 | **Escrow** | `escrow.rs` | Milestone-based payment escrow management |
 | **Events** | `events.rs` | Standardized event emission for off-chain indexing |
+| **Gasless** | `gasless.rs` | Ed25519 signature-based gasless task assignment via a relayer |
 | **Governance** | `governance.rs` | Proposal and voting system for protocol decisions |
 | **Pausable** | `pausable.rs` | Emergency pause functionality per action type |
 | **Reputation** | `reputation.rs` | User reputation and tier system |
