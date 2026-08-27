@@ -24,6 +24,8 @@ pub mod zkp_attestation;
 pub mod kani_proofs;
 
 #[cfg(test)]
+mod escrow_swap_test;
+#[cfg(test)]
 mod multisig_test;
 #[cfg(test)]
 mod swap_router_test;
@@ -367,6 +369,112 @@ impl TaskManagerContract {
         // Transfer reward from creator to the contract
         let token_client = soroban_sdk::token::Client::new(&env, &token_contract);
         token_client.transfer(&creator, &env.current_contract_address(), &reward);
+
+        let mut task_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TaskCount)
+            .unwrap_or(0);
+        task_count += 1;
+        env.storage()
+            .instance()
+            .set(&DataKey::TaskCount, &task_count);
+
+        let now = env.ledger().timestamp();
+
+        let task = Task {
+            id: task_count,
+            title: title.clone(),
+            description,
+            reward,
+            assignee: None,
+            status: TaskStatus::Open,
+            created_by: creator.clone(),
+            tags,
+            category_id: None,
+            deadline: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Task(task_count), &task);
+
+        // Lock escrow
+        escrow::lock_escrow(env.clone(), task_count, reward);
+
+        // Emit event
+        events::emit_task_created(&env, task_count, creator, title, reward);
+
+        // Update statistics
+        storage::update_statistics(&env, |stats| {
+            stats.total_tasks_created += 1;
+            stats.total_value_locked += reward;
+        });
+
+        task_count
+    }
+
+    /// Creates a task funded by swapping an arbitrary input token into the
+    /// contract's configured escrow stablecoin atomically, through the
+    /// multi-asset swap router (multi-hop, slippage-guarded). The reward is
+    /// derived from the swap's output amount rather than supplied directly.
+    pub fn create_task_with_swap(
+        env: Env,
+        creator: Address,
+        title: Symbol,
+        description: Symbol,
+        token_in: Address,
+        amount_in: i128,
+        route: swap_router::SwapRoute,
+        slippage_bps: Option<u32>,
+        tags: Vec<Symbol>,
+    ) -> u32 {
+        creator.require_auth();
+
+        // Check if paused
+        pausable::require_not_paused(
+            env.clone(),
+            pausable::PauseAction::CreateTask,
+            Some(creator.clone()),
+        );
+
+        if amount_in <= 0 {
+            panic!();
+        }
+
+        let token_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenContract)
+            .unwrap_optimized();
+
+        // Atomically swap the arbitrary input token into the escrow
+        // currency; this pulls `amount_in` of `token_in` from the creator
+        // and leaves the converted amount in the contract's own balance.
+        let reward = swap_router::swap_for_funding(
+            env.clone(),
+            creator.clone(),
+            token_in.clone(),
+            amount_in,
+            route,
+            token_contract.clone(),
+            slippage_bps,
+        );
+
+        if reward <= 0 {
+            panic!();
+        }
+
+        events::emit_swap_executed(
+            &env,
+            creator.clone(),
+            token_in,
+            token_contract,
+            amount_in,
+            reward,
+        );
 
         let mut task_count: u32 = env
             .storage()
