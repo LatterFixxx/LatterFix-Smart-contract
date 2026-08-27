@@ -19,6 +19,9 @@ soroban-sdk = "21.7.0"
 
 [dev-dependencies]
 soroban-sdk = { version = "21.7.0", features = ["testutils"] }
+# Used only by tests to produce real Ed25519 signatures for the gasless
+# assignment path; already in the lock graph via soroban-sdk testutils.
+ed25519-dalek = "2"
 
 [features]
 default = []
