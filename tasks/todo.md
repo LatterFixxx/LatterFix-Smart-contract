@@ -1,33 +1,35 @@
-# Issue #077 — Cryptographic Signature-Based Gasless Task Assignment
+# Issue #094 — Multi-Signature Role Management Recovery Protocol
 
 ## Plan
 
-- [x] New `src/gasless.rs` module: `GaslessAssignment` struct, `GaslessKey` storage enum
-- [x] `register_signing_key` (contributor) + `admin_set_signing_key` (admin) — Ed25519 pubkey registration
-- [x] Per-contributor nonce tracking (`GaslessKey::Nonce`) for replay protection
-- [x] `assign_task_gasless(relayer, request, signature)` relayer endpoint
-  - [x] domain separation (`request.contract == current contract`)
-  - [x] `expiration_ledger` time bound
-  - [x] nonce match + consume
-  - [x] `env.crypto().ed25519_verify` over canonical XDR payload
-- [x] `gasless_assignment_payload` view so off-chain signers sign exactly what's verified
-- [x] Extract `apply_task_assignment` helper; reuse from `assign_task` + gasless path
-- [x] Events: `emit_signing_key_registered`, `emit_gasless_assignment`
-- [x] `src/gasless_test.rs` — 11 unit tests
-- [x] `Cargo.toml` dev-dep `ed25519-dalek = "2"`
-- [x] README module table row
+- [x] New `src/social_recovery.rs`: `RecoveryStatus` / `RecoveryProposal` / `RecoveryConfig` / `RecoveryKey`
+- [x] `configure_recovery` (admin-only, threshold >= 1, ttl > 0); defaults 3 / 7 days
+- [x] `propose_recovery` — top-tier proposer, auto-approves, one active proposal at a time (stale one lazily expired)
+- [x] `approve_recovery` — top-tier guardian, one vote each, TTL-checked, Approved on threshold
+- [x] `execute_recovery` — Approved-only, TTL-checked, re-count live-tier approvals, snapshot-admin check, rotate `DataKey::Admin`
+- [x] `cancel_recovery` — proposer or sitting admin
+- [x] `is_eligible_guardian` / `get_active_recovery` / `get_recovery_proposal` views
+- [x] `src/lib.rs`: module wiring + thin contract methods + `get_admin` view
+- [x] `src/events.rs`: `emit_recovery_proposed/approved/executed/cancelled`
+- [x] `src/social_recovery_test.rs` — 24 unit tests
+- [x] README module row + feature section
 
 ## Review
 
-- `cargo test --lib gasless` → 11/11 pass.
-- `cargo test --lib` → 127 pass / 12 fail; the 12 failures are **pre-existing on
-  `main`** (verified via `git stash`): 9 `benchmark::*`, 2 `swap_router_test::test_refund_on_*`,
-  1 `test::test_create_and_complete_task_flow`. No new regressions; +11 new passing tests.
+- `cargo test --lib social_recovery` → 24/24 pass.
+- `cargo test --lib` → 140 pass / 12 fail. The 12 are **pre-existing on `main`**
+  (`benchmark::*` ×9, `swap_router_test::test_refund_on_*` ×2,
+  `test::test_create_and_complete_task_flow`). No regressions; +24 new passing tests.
 - `cargo build --target wasm32-unknown-unknown --release` → clean.
-- `cargo clippy --lib --tests` → no new warnings in `gasless.rs` / `gasless_test.rs`.
+- `cargo clippy --lib --tests` → no new warnings in the added files.
 
-## Notes / follow-ups
+## Design notes
 
-- SECP256k1 support intentionally out of scope (Ed25519 is Stellar-native). It is a
-  mechanical add via `env.crypto().secp256k1_recover` behind a key-type discriminator.
-- Nonces + signing keys use instance storage, consistent with `Task` storage.
+- On-chain `require_auth()` approvals (each = a host-verified signature), matching
+  the existing `src/multisig.rs` threshold model — chosen over off-chain sig
+  collection for consistency and simplicity.
+- Eligibility = reputation tier `Master` (>=1000) or `Legend` (>=2500) via
+  `reputation::get_user_tier`. Note reputation has two stores; tier gating uses
+  `reputation::ReputationKey::UserPoints` (the one `get_user_tier` reads).
+- `admin_at_proposal` snapshot + re-check at execution prevents a stale proposal
+  from silently clobbering a newer admin.

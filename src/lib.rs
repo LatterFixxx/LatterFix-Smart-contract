@@ -11,6 +11,7 @@ pub mod merkle;
 pub mod multisig;
 pub mod pausable;
 pub mod reputation;
+pub mod social_recovery;
 pub mod storage;
 pub mod swap_router;
 pub mod treasury;
@@ -42,6 +43,8 @@ mod vesting_vault_test;
 mod batch_test;
 #[cfg(test)]
 mod gasless_test;
+#[cfg(test)]
+mod social_recovery_test;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec,
@@ -1247,6 +1250,80 @@ impl TaskManagerContract {
 
     pub fn is_multisig_signer(env: Env, who: Address) -> bool {
         multisig::is_signer(&env, &who)
+    }
+
+    // ========================================================================
+    // Social Recovery (threshold admin-role recovery by top-tier guardians)
+    // ========================================================================
+
+    /// Current admin address.
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_optimized()
+    }
+
+    /// Admin-only: set the approval `threshold` and `proposal_ttl` (seconds) for
+    /// admin-recovery proposals. Defaults are 3 approvals / 7 days.
+    pub fn configure_recovery(env: Env, admin: Address, threshold: u32, proposal_ttl: u64) {
+        social_recovery::configure_recovery(env, admin, threshold, proposal_ttl);
+    }
+
+    pub fn get_recovery_config(env: Env) -> social_recovery::RecoveryConfig {
+        social_recovery::get_config(&env)
+    }
+
+    /// True if `user` sits in the `Master` or `Legend` reputation tier and may
+    /// therefore propose/approve an admin recovery.
+    pub fn is_recovery_guardian(env: Env, user: Address) -> bool {
+        social_recovery::is_eligible_guardian(&env, &user)
+    }
+
+    /// Open an emergency proposal to rotate the admin role to `proposed_admin`.
+    /// `proposer` must be a top-tier guardian; their approval is recorded.
+    pub fn propose_recovery(env: Env, proposer: Address, proposed_admin: Address) -> u32 {
+        let id = social_recovery::propose_recovery(env.clone(), proposer.clone(), proposed_admin.clone());
+        events::emit_recovery_proposed(&env, id, proposer, proposed_admin);
+        id
+    }
+
+    /// Add a top-tier guardian's approval to a pending recovery proposal.
+    pub fn approve_recovery(
+        env: Env,
+        guardian: Address,
+        recovery_id: u32,
+    ) -> social_recovery::RecoveryStatus {
+        let status =
+            social_recovery::approve_recovery(env.clone(), guardian.clone(), recovery_id);
+        events::emit_recovery_approved(&env, recovery_id, guardian, status as u32);
+        status
+    }
+
+    /// Execute an approved recovery: rotate `DataKey::Admin` to the proposed
+    /// address. Returns the new admin.
+    pub fn execute_recovery(env: Env, caller: Address, recovery_id: u32) -> Address {
+        let old_admin = Self::get_admin(env.clone());
+        let new_admin = social_recovery::execute_recovery(env.clone(), caller, recovery_id);
+        events::emit_recovery_executed(&env, recovery_id, old_admin, new_admin.clone());
+        new_admin
+    }
+
+    /// Cancel a recovery proposal. Callable by the proposer or the sitting admin.
+    pub fn cancel_recovery(env: Env, caller: Address, recovery_id: u32) {
+        social_recovery::cancel_recovery(env.clone(), caller.clone(), recovery_id);
+        events::emit_recovery_cancelled(&env, recovery_id, caller);
+    }
+
+    pub fn get_recovery_proposal(
+        env: Env,
+        recovery_id: u32,
+    ) -> Option<social_recovery::RecoveryProposal> {
+        social_recovery::get_recovery_proposal(&env, recovery_id)
+    }
+
+    pub fn get_active_recovery(env: Env) -> Option<social_recovery::RecoveryProposal> {
+        social_recovery::get_active_recovery(&env)
     }
 
     // ========================================================================
