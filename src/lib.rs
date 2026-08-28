@@ -2,6 +2,7 @@
 use soroban_sdk::unwrap::UnwrapOptimized;
 
 pub mod access_control;
+pub mod audit_log;
 pub mod benchmark;
 pub mod escrow;
 pub mod events;
@@ -13,6 +14,7 @@ pub mod pausable;
 pub mod reputation;
 pub mod social_recovery;
 pub mod storage;
+pub mod storage_migrator;
 pub mod swap_router;
 pub mod treasury;
 pub mod twap_oracle;
@@ -25,6 +27,8 @@ pub mod zkp_attestation;
 #[cfg(kani)]
 pub mod kani_proofs;
 
+#[cfg(test)]
+mod audit_log_test;
 #[cfg(test)]
 mod escrow_swap_test;
 #[cfg(test)]
@@ -45,6 +49,8 @@ mod batch_test;
 mod gasless_test;
 #[cfg(test)]
 mod social_recovery_test;
+#[cfg(test)]
+mod storage_migrator_test;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec,
@@ -70,6 +76,7 @@ pub enum TaskStatus {
 
 #[contracttype]
 #[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(any(test, kani), derive(Debug))]
 pub struct Task {
     pub id: u32,
     pub title: Symbol,
@@ -677,6 +684,15 @@ impl TaskManagerContract {
         task.updated_at = env.ledger().timestamp();
         env.storage().instance().set(&DataKey::Task(task_id), &task);
 
+        let root_hash = audit_log::compute_state_root(&env, &task);
+        audit_log::record_state_root(
+            &env,
+            Symbol::new(&env, "complete_task"),
+            task_id,
+            caller.clone(),
+            root_hash,
+        );
+
         // Award reputation
         reputation::award_reputation(
             env.clone(),
@@ -734,6 +750,15 @@ impl TaskManagerContract {
         task.status = TaskStatus::Cancelled;
         task.updated_at = env.ledger().timestamp();
         env.storage().instance().set(&DataKey::Task(task_id), &task);
+
+        let root_hash = audit_log::compute_state_root(&env, &task);
+        audit_log::record_state_root(
+            &env,
+            Symbol::new(&env, "cancel_task"),
+            task_id,
+            creator.clone(),
+            root_hash,
+        );
 
         events::emit_task_cancelled(&env, task_id, creator, task.reward);
 
@@ -1720,6 +1745,50 @@ impl TaskManagerContract {
     }
 
     // ========================================================================
+    // On-Chain Audit Log (issue #91)
+    // ========================================================================
+
+    pub fn get_audit_log_count(env: Env) -> u32 {
+        audit_log::get_audit_log_count(&env)
+    }
+
+    pub fn get_audit_log_entry(env: Env, index: u32) -> Option<audit_log::AuditLogEntry> {
+        audit_log::get_audit_log_entry(&env, index)
+    }
+
+    pub fn get_recent_audit_log(env: Env, limit: u32) -> Vec<audit_log::AuditLogEntry> {
+        audit_log::get_recent_audit_log(&env, limit)
+    }
+
+    pub fn verify_audit_root(env: Env, index: u32, expected_root: BytesN<32>) -> bool {
+        audit_log::verify_audit_root(&env, index, expected_root)
+    }
+
+    // ========================================================================
+    // Versioned Storage Migrator demo (issue #92)
+    // ========================================================================
+
+    /// Seeds a `V1`-shaped task record under the migrator's own key
+    /// namespace, for exercising `read_migrated_task` — see
+    /// `storage_migrator`'s module docs for why this is a separate
+    /// namespace from the live `Task` storage path.
+    pub fn seed_versioned_task_v1(env: Env, task_id: u32, v1: storage_migrator::TaskV1) {
+        storage_migrator::write_versioned_task(
+            &env,
+            task_id,
+            &storage_migrator::VersionedTask::V1(v1),
+        );
+    }
+
+    pub fn read_migrated_task(env: Env, task_id: u32) -> Option<Task> {
+        storage_migrator::read_migrated_task(&env, task_id)
+    }
+
+    pub fn get_migration_count(env: Env) -> u32 {
+        storage_migrator::get_migration_count(&env)
+    }
+
+    // ========================================================================
     // Reward Treasury: Decay-Curve Vesting & Distribution
     // ========================================================================
 
@@ -1968,6 +2037,15 @@ pub(crate) fn apply_task_assignment(env: &Env, task_id: u32, assignee: Address) 
     task.updated_at = env.ledger().timestamp();
 
     env.storage().instance().set(&DataKey::Task(task_id), &task);
+
+    let root_hash = audit_log::compute_state_root(env, &task);
+    audit_log::record_state_root(
+        env,
+        Symbol::new(env, "assign_task"),
+        task_id,
+        assignee.clone(),
+        root_hash,
+    );
 
     events::emit_task_assigned(env, task_id, assignee);
 }

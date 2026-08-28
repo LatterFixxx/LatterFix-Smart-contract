@@ -1,4 +1,18 @@
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, String, Symbol};
+
+// ── Audit Log Events ─────────────────────────────────────────────────────────
+pub fn emit_audit_root_recorded(
+    env: &Env,
+    operation: Symbol,
+    subject_id: u32,
+    root_hash: BytesN<32>,
+    index: u32,
+) {
+    env.events().publish(
+        (symbol_short!("aud_root"), subject_id),
+        (operation, root_hash, index, env.ledger().timestamp()),
+    );
+}
 
 // ── Task Events ────────────────────────────────────────────────────────────
 pub fn emit_task_created(env: &Env, task_id: u32, creator: Address, title: Symbol, reward: i128) {
