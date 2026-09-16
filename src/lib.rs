@@ -11,6 +11,7 @@ pub mod governance;
 pub mod merkle;
 pub mod multisig;
 pub mod pausable;
+pub mod reentrancy_guard;
 pub mod reputation;
 pub mod social_recovery;
 pub mod storage;
@@ -33,6 +34,8 @@ mod audit_log_test;
 mod escrow_swap_test;
 #[cfg(test)]
 mod multisig_test;
+#[cfg(test)]
+mod reentrancy_test;
 #[cfg(test)]
 mod swap_router_test;
 #[cfg(test)]
@@ -628,6 +631,9 @@ impl TaskManagerContract {
             Some(caller.clone()),
         );
 
+        let fn_sym = Symbol::new(&env, "complete_task");
+        reentrancy_guard::non_reentrant_enter(&env, fn_sym.clone(), &caller);
+
         let mut task: Task = env
             .storage()
             .instance()
@@ -635,12 +641,14 @@ impl TaskManagerContract {
             .unwrap_optimized();
 
         if task.status != TaskStatus::Completed {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
 
         // Verify caller is creator or admin
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_optimized();
         if caller != task.created_by && caller != admin {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
 
@@ -670,13 +678,7 @@ impl TaskManagerContract {
             .clone()
             .unwrap_optimized();
 
-        if fee > 0 {
-            token_client.transfer(&env.current_contract_address(), &fee_recipient, &fee);
-        }
-        if payout > 0 {
-            token_client.transfer(&env.current_contract_address(), &assignee, &payout);
-        }
-
+        // ── Checks-Effects-Interactions (CEI): State Mutations First ───────
         // Release escrow
         escrow::release_escrow(env.clone(), task_id, task.reward);
 
@@ -703,7 +705,7 @@ impl TaskManagerContract {
             Symbol::new(&env, "Task_verified_and_completed"),
         );
 
-        events::emit_task_completed(&env, task_id, assignee, payout, fee);
+        events::emit_task_completed(&env, task_id, assignee.clone(), payout, fee);
 
         // Update statistics
         storage::update_statistics(&env, |stats| {
@@ -711,6 +713,16 @@ impl TaskManagerContract {
             stats.total_value_paid += payout;
             stats.total_platform_fees += fee;
         });
+
+        // ── Interactions: External Token Transfers ──────────────────────────
+        if fee > 0 {
+            token_client.transfer(&env.current_contract_address(), &fee_recipient, &fee);
+        }
+        if payout > 0 {
+            token_client.transfer(&env.current_contract_address(), &assignee, &payout);
+        }
+
+        reentrancy_guard::non_reentrant_exit(&env, fn_sym);
     }
 
     pub fn cancel_task(env: Env, creator: Address, task_id: u32) {
@@ -722,6 +734,9 @@ impl TaskManagerContract {
             Some(creator.clone()),
         );
 
+        let fn_sym = Symbol::new(&env, "cancel_task");
+        reentrancy_guard::non_reentrant_enter(&env, fn_sym.clone(), &creator);
+
         let mut task: Task = env
             .storage()
             .instance()
@@ -729,21 +744,16 @@ impl TaskManagerContract {
             .unwrap_optimized();
 
         if task.created_by != creator {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
 
         if task.status != TaskStatus::Open {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
 
-        let token_contract: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::TokenContract)
-            .unwrap_optimized();
-        let token_client = soroban_sdk::token::Client::new(&env, &token_contract);
-        token_client.transfer(&env.current_contract_address(), &creator, &task.reward);
-
+        // ── Checks-Effects-Interactions (CEI): State Mutations First ───────
         // Release escrow (refund)
         escrow::release_escrow(env.clone(), task_id, task.reward);
 
@@ -760,12 +770,23 @@ impl TaskManagerContract {
             root_hash,
         );
 
-        events::emit_task_cancelled(&env, task_id, creator, task.reward);
+        events::emit_task_cancelled(&env, task_id, creator.clone(), task.reward);
 
         // Update statistics
         storage::update_statistics(&env, |stats| {
             stats.total_tasks_cancelled += 1;
         });
+
+        // ── Interactions: External Token Transfers ──────────────────────────
+        let token_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenContract)
+            .unwrap_optimized();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_contract);
+        token_client.transfer(&env.current_contract_address(), &creator, &task.reward);
+
+        reentrancy_guard::non_reentrant_exit(&env, fn_sym);
     }
 
     pub fn dispute_task(env: Env, caller: Address, task_id: u32) {
@@ -817,6 +838,9 @@ impl TaskManagerContract {
             panic!();
         }
 
+        let fn_sym = Symbol::new(&env, "resolve_dispute");
+        reentrancy_guard::non_reentrant_enter(&env, fn_sym.clone(), &admin);
+
         let mut task: Task = env
             .storage()
             .instance()
@@ -824,12 +848,24 @@ impl TaskManagerContract {
             .unwrap_optimized();
 
         if task.status != TaskStatus::Disputed {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
 
         if creator_refund + assignee_payout != task.reward {
+            reentrancy_guard::non_reentrant_exit(&env, fn_sym);
             panic!();
         }
+
+        // ── Checks-Effects-Interactions (CEI): State Mutations First ───────
+        // Release escrow
+        escrow::release_escrow(env.clone(), task_id, task.reward);
+
+        task.status = TaskStatus::Resolved;
+        task.updated_at = env.ledger().timestamp();
+        env.storage().instance().set(&DataKey::Task(task_id), &task);
+
+        events::emit_dispute_resolved(&env, task_id, creator_refund, assignee_payout);
 
         let token_contract: Address = env
             .storage()
@@ -863,14 +899,7 @@ impl TaskManagerContract {
             );
         }
 
-        // Release escrow
-        escrow::release_escrow(env.clone(), task_id, task.reward);
-
-        task.status = TaskStatus::Resolved;
-        task.updated_at = env.ledger().timestamp();
-        env.storage().instance().set(&DataKey::Task(task_id), &task);
-
-        events::emit_dispute_resolved(&env, task_id, creator_refund, assignee_payout);
+        reentrancy_guard::non_reentrant_exit(&env, fn_sym);
     }
 
     pub fn resolve_dispute_split(
@@ -1914,6 +1943,44 @@ impl TaskManagerContract {
         signature: BytesN<64>,
     ) {
         gasless::assign_task_gasless(env, relayer, request, signature);
+    }
+
+    // ========================================================================
+    // Reentrancy Guard & Call Stack Depth (Issue #073)
+    // ========================================================================
+
+    /// Returns true if the contract is currently entered in a protected context.
+    pub fn get_reentrancy_status(env: Env) -> bool {
+        reentrancy_guard::is_locked(&env)
+    }
+
+    /// Returns the current active call stack depth.
+    pub fn get_call_depth(env: Env) -> u32 {
+        reentrancy_guard::get_call_depth(&env)
+    }
+
+    /// Returns the configured maximum allowable call stack depth.
+    pub fn get_max_call_depth(env: Env) -> u32 {
+        reentrancy_guard::get_max_call_depth(&env)
+    }
+
+    /// Inspects the active Host Invocation Key for `function` if currently executing.
+    pub fn get_invocation_key(
+        env: Env,
+        function: Symbol,
+    ) -> Option<reentrancy_guard::HostInvocationKey> {
+        reentrancy_guard::get_invocation_key(&env, &function)
+    }
+
+    /// Admin endpoint to reconfigure the maximum allowable call stack depth.
+    pub fn set_max_call_depth(env: Env, caller: Address, max_depth: u32) {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_optimized();
+        if caller != admin {
+            panic!("Unauthorized: caller is not admin");
+        }
+        reentrancy_guard::set_max_call_depth(&env, max_depth);
+        events::emit_max_call_depth_updated(&env, caller, max_depth);
     }
 }
 
