@@ -563,3 +563,31 @@ pub fn emit_recovery_cancelled(env: &Env, recovery_id: u32, caller: Address) {
         (caller, env.ledger().timestamp()),
     );
 }
+
+// ── Reentrancy Guard Events ──────────────────────────────────────────────────
+pub fn emit_reentrancy_lock_acquired(
+    env: &Env,
+    function: Symbol,
+    caller: Address,
+    depth: u32,
+) {
+    env.events().publish(
+        (symbol_short!("re_lock"), function),
+        (caller, depth, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_reentrancy_lock_released(env: &Env, function: Symbol, depth: u32) {
+    env.events().publish(
+        (symbol_short!("re_rel"), function),
+        (depth, env.ledger().timestamp()),
+    );
+}
+
+pub fn emit_max_call_depth_updated(env: &Env, admin: Address, new_max_depth: u32) {
+    env.events().publish(
+        (symbol_short!("re_depth"), admin),
+        (new_max_depth, env.ledger().timestamp()),
+    );
+}
+

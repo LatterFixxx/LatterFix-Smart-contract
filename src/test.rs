@@ -84,7 +84,7 @@ fn test_create_and_complete_task_flow() {
         &task_id,
         &Symbol::new(
             &env,
-            "https://github.com/LatterFixxx/LatterFix-Smart-contract",
+            "https_github_com_latterfix",
         ),
     );
     client.complete_task(&creator, &task_id);
