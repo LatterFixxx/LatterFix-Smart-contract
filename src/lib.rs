@@ -1,6 +1,7 @@
 #![no_std]
 use soroban_sdk::unwrap::UnwrapOptimized;
 
+mod contract_metadata;
 pub mod access_control;
 pub mod audit_log;
 pub mod benchmark;
@@ -171,6 +172,15 @@ pub struct TaskManagerContract;
 
 #[contractimpl]
 impl TaskManagerContract {
+    /// Stable, read-only JSON summary of this contract's code metadata.
+    ///
+    /// The canonical off-chain metadata is embedded in the Wasm
+    /// `contractmetav0` section (SEP-46), not in contract storage.
+    /// This getter is available before initialization and needs no auth.
+    pub fn get_contract_metadata(env: Env) -> String {
+        String::from_str(&env, contract_metadata::CONTRACT_METADATA_JSON)
+    }
+
     // ========================================================================
     // Initialization
     // ========================================================================
