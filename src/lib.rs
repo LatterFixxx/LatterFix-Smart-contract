@@ -38,6 +38,8 @@ mod swap_router_test;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
+mod event_schema_test;
+#[cfg(test)]
 mod treasury_test;
 #[cfg(test)]
 mod upgrade_test;
