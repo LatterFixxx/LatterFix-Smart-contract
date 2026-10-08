@@ -1511,3 +1511,27 @@ fn test_dispute_split_via_multisig_proposal() {
     assert_eq!(token_client.balance(&assignee), 392);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
+
+#[test]
+fn test_contract_metadata_query_is_public_stable_and_versioned() {
+    let env = Env::default();
+    // No initialize() or authorization: contract code metadata is public.
+    let contract_id = env.register_contract(None, TaskManagerContract);
+    let client = TaskManagerContractClient::new(&env, &contract_id);
+    let expected = soroban_sdk::String::from_str(
+        &env,
+        crate::contract_metadata::CONTRACT_METADATA_JSON,
+    );
+
+    assert_eq!(client.get_contract_metadata(), expected);
+    // Repeated reads must be deterministic and independent of storage.
+    assert_eq!(client.get_contract_metadata(), expected);
+    // A Cargo version bump must not silently leave the published metadata stale.
+    assert_eq!(
+        crate::contract_metadata::CONTRACT_VERSION,
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(crate::contract_metadata::CONTRACT_METADATA_JSON.contains(
+        "\"source_repo\":\"https://github.com/LatterFixxx/LatterFix-Smart-contract\""
+    ));
+}
