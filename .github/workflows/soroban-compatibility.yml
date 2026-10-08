@@ -1,0 +1,42 @@
+name: Soroban 21 Compatibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - .github/workflows/soroban-compatibility.yml
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - .github/workflows/soroban-compatibility.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Exercise contract initialization against the Soroban host simulator
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo test --locked --lib test::test_initialization -- --exact
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      - name: Build Soroban runtime artifact
+        run: stellar contract build
