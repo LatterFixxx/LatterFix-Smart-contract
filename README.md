@@ -1,5 +1,7 @@
 # LatterFix Smart Contract
 
+[![Contract CI](https://github.com/LatterFixxx/LatterFix-Smart-contract/actions/workflows/contract-ci.yml/badge.svg?branch=main)](https://github.com/LatterFixxx/LatterFix-Smart-contract/actions/workflows/contract-ci.yml)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-1.84%2B-orange.svg)](https://www.rust-lang.org)
 [![Stellar](https://img.shields.io/badge/Stellar-Soroban%2021-blue.svg)](https://stellar.org)
@@ -284,6 +286,15 @@ rustup target add wasm32-unknown-unknown
 # Install Stellar CLI
 cargo install --locked stellar-cli
 ```
+
+### Continuous Integration
+
+The Contract CI workflow checks every pull request to `main` and every push to
+`main` with Rust stable and nightly. Clippy checks all targets with warnings
+denied, an exact `test::test_initialization` host test verifies initialization
+and rejects reinitialization, and a locked release build targets
+`wasm32v1-none`. This focused host check does not run the full unit suite.
+Any lint, selected-test, or WASM-build failure fails its matrix job.
 
 ### Run Tests
 

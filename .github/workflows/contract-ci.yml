@@ -1,0 +1,46 @@
+name: Contract CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Contract CI (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+          targets: wasm32v1-none
+
+      - name: Check all targets with Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Verify contract initialization in the Soroban host
+        run: cargo test --lib --locked test::test_initialization -- --exact
+
+      - name: Build release WASM
+        run: cargo build --lib --locked --release --target wasm32v1-none
+
