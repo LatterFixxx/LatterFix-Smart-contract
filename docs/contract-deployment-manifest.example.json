@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "contract_name": "TaskManager Pro",
+  "contract_version": "0.2.0",
+  "source_repo": "https://github.com/LatterFixxx/LatterFix-Smart-contract",
+  "source_commit": null,
+  "network": null,
+  "contract_id": null,
+  "wasm_hash": null,
+  "metadata_standard": "SEP-46"
+}
