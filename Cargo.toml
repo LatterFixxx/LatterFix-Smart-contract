@@ -2,6 +2,7 @@
 name = "latterfix-smart-contract"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.84"
 authors = ["LatterFix Team"]
 description = "Decentralized task management protocol with escrow, governance, and reputation system on Stellar/Soroban"
 license = "MIT"
@@ -15,10 +16,10 @@ name = "task_manager_pro"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = "21.7.0"
+soroban-sdk = "=21.7.7"
 
 [dev-dependencies]
-soroban-sdk = { version = "21.7.0", features = ["testutils"] }
+soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
 # Used only by tests to produce real Ed25519 signatures for the gasless
 # assignment path; already in the lock graph via soroban-sdk testutils.
 ed25519-dalek = "2"
@@ -41,4 +42,4 @@ opt-level = 1
 debug = true
 
 [package.metadata.docs.rs]
-targets = ["wasm32-unknown-unknown"]
+targets = ["wasm32v1-none"]

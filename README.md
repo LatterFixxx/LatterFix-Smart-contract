@@ -275,11 +275,11 @@ The contract emits standardized events for off-chain indexing:
 ### Prerequisites
 
 ```bash
-# Install Rust
+# Install Rust (1.84+ provides the Soroban-supported wasm32v1-none target)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Add WebAssembly target
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 
 # Install Stellar CLI
 cargo install --locked stellar-cli
@@ -288,16 +288,10 @@ cargo install --locked stellar-cli
 ### Run Tests
 
 ```bash
-cargo test
+RUSTFLAGS="-D warnings" cargo test --locked --lib test::test_initialization -- --exact
 ```
 
 ### Build WASM Binary
-
-```bash
-cargo build --target wasm32-unknown-unknown --release
-```
-
-### Build Optimized WASM
 
 ```bash
 stellar contract build
@@ -313,7 +307,7 @@ stellar network add testnet \
 
 # Deploy
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/task_manager_pro.wasm \
+  --wasm target/wasm32v1-none/release/task_manager_pro.wasm \
   --network testnet \
   --source <your-account>
 ```
