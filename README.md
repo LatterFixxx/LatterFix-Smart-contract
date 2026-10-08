@@ -342,6 +342,23 @@ python3 tooling/ttl_bot.py \
 - `--min-balance`: Minimum XLM balance for the bot wallet before alerting (default: `10.0`).
 - `--interval`: Run continuously every N seconds (default: `0`, which means run once and exit).
 
+### Persistent application-state TTL
+
+Persistent keys managed by `src/storage.rs` use a bounded renewal policy:
+`TTL_EXTENSION_THRESHOLD` is the minimum remaining lifetime that triggers a
+renewal, `DEFAULT_PERSISTENT_TTL` is the normal renewal target, and
+`MAX_PERSISTENT_TTL` is the documented ceiling.
+
+Successful reads through `storage::get_persistent` renew an active key when it
+falls below the threshold; writes already renew automatically. Maintenance bots
+may also call the admin-authenticated `refresh_persistent_storage(admin)`
+contract method. That sweep is safe when optional global keys have not been
+created yet and is a no-op for entries whose TTL is still healthy.
+
+The contract-level refresh is intentionally separate from `soroban contract
+extend`: the CLI command renews contract code/instance TTL, while
+`refresh_persistent_storage` renews the persistent application-data entries.
+
 ---
 
 ## Security Considerations

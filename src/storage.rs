@@ -40,7 +40,11 @@ pub const TEMP_STORAGE_TTL: u32 = 120_960;
 /// TTL for session/nonce data (~1 day)
 pub const SESSION_TTL: u32 = 17_280;
 
-/// TTL threshold for triggering extensions (when to renew)
+/// Minimum remaining persistent-entry TTL before a renewal is triggered.
+///
+/// Together with `MAX_PERSISTENT_TTL`, this defines the bounded renewal
+/// window for long-lived state. `extend_ttl` is a no-op while an entry is
+/// above this threshold.
 pub const TTL_EXTENSION_THRESHOLD: u32 = 100_000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -186,13 +190,22 @@ pub struct SessionData {
 // PERSISTENT STORAGE OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Get a value from persistent storage
+/// Get a value from persistent storage and renew it when it is approaching
+/// archival.
+///
+/// Active reads are a strong signal that an entry is still live application
+/// state. Renew only after a successful read so a lookup for a missing key
+/// cannot trap in `extend_ttl`.
 pub fn get_persistent<K, V>(env: &Env, key: &K) -> Option<V>
 where
     K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
     V: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>,
 {
-    env.storage().persistent().get(key)
+    let value = env.storage().persistent().get(key);
+    if value.is_some() {
+        extend_persistent_ttl_default(env, key);
+    }
+    value
 }
 
 /// Set a value in persistent storage with automatic TTL
@@ -487,10 +500,19 @@ pub fn clear_submission_cache(env: &Env, task_id: u32) {
 /// This should be called periodically (e.g., by a bot or during high-activity periods)
 /// to ensure persistent data doesn't expire.
 pub fn refresh_all_persistent_ttl(env: &Env) {
-    extend_persistent_ttl_default(env, &PersistentKey::Statistics);
-    extend_persistent_ttl_default(env, &PersistentKey::Categories);
-    extend_persistent_ttl_default(env, &PersistentKey::Tags);
-    extend_persistent_ttl_default(env, &PersistentKey::Leaderboard);
+    refresh_persistent_ttl_if_present(env, &PersistentKey::Statistics);
+    refresh_persistent_ttl_if_present(env, &PersistentKey::Categories);
+    refresh_persistent_ttl_if_present(env, &PersistentKey::Tags);
+    refresh_persistent_ttl_if_present(env, &PersistentKey::Leaderboard);
+}
+
+fn refresh_persistent_ttl_if_present<K>(env: &Env, key: &K)
+where
+    K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+{
+    if env.storage().persistent().has(key) {
+        extend_persistent_ttl_default(env, key);
+    }
 }
 
 /// Migrate data from temporary to persistent storage
