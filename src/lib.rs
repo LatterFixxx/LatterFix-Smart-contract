@@ -51,6 +51,8 @@ mod gasless_test;
 mod social_recovery_test;
 #[cfg(test)]
 mod storage_migrator_test;
+#[cfg(test)]
+mod storage_ttl_test;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec,
@@ -1476,6 +1478,26 @@ impl TaskManagerContract {
 
     pub fn get_statistics(env: Env) -> storage::ContractStatistics {
         storage::get_statistics(&env)
+    }
+
+    /// Admin-only maintenance hook for off-chain keepalive bots.
+    ///
+    /// Each key is renewed only when it exists and has fallen below the
+    /// storage module's renewal threshold, so callers may invoke this
+    /// periodically without rewriting business state.
+    pub fn refresh_persistent_storage(env: Env, admin: Address) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_optimized();
+        if admin != stored_admin {
+            panic!();
+        }
+
+        storage::refresh_all_persistent_ttl(&env);
     }
 
     // ========================================================================
