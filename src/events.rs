@@ -563,3 +563,47 @@ pub fn emit_recovery_cancelled(env: &Env, recovery_id: u32, caller: Address) {
         (caller, env.ledger().timestamp()),
     );
 }
+
+// ── Correlated Diagnostic & Subgraph Indexing Events (#031) ─────────────────
+
+/// Diagnostic metadata for external indexing pipelines (The Graph / Goldsky)
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[soroban_sdk::contracttype]
+pub struct DiagnosticEventMetadata {
+    pub correlation_id: BytesN<32>,
+    pub sequence: u32,
+    pub timestamp: u64,
+}
+
+/// Publishes a state transition snapshot with correlation tracking for GraphQL entities
+pub fn emit_state_transition_snapshot(
+    env: &Env,
+    correlation_id: BytesN<32>,
+    entity_id: u32,
+    previous_state: Symbol,
+    new_state: Symbol,
+) {
+    let seq = env.ledger().sequence();
+    let ts = env.ledger().timestamp();
+    env.events().publish(
+        (soroban_sdk::symbol_short!("diag_snp"), entity_id),
+        (correlation_id, previous_state, new_state, seq, ts),
+    );
+}
+
+/// Publishes a correlated operation event with caller and lifecycle stage tag
+pub fn emit_correlated_operation(
+    env: &Env,
+    correlation_id: BytesN<32>,
+    entity_id: u32,
+    operation_tag: Symbol,
+    actor: Address,
+) {
+    let seq = env.ledger().sequence();
+    let ts = env.ledger().timestamp();
+    env.events().publish(
+        (soroban_sdk::symbol_short!("diag_cor"), entity_id),
+        (correlation_id, operation_tag, actor, seq, ts),
+    );
+}
+

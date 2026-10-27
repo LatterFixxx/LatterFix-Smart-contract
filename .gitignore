@@ -6,3 +6,5 @@ test_snapshots/
 docs/
 docs/issues/
 docs/issues/*.md
+config.bat
+node_modules
