@@ -51,6 +51,12 @@ mod gasless_test;
 mod social_recovery_test;
 #[cfg(test)]
 mod storage_migrator_test;
+#[cfg(test)]
+mod property_tests;
+#[cfg(test)]
+mod event_indexing_test;
+#[cfg(test)]
+mod payroll_resources_test;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec,
@@ -1915,7 +1921,65 @@ impl TaskManagerContract {
     ) {
         gasless::assign_task_gasless(env, relayer, request, signature);
     }
+
+    // ========================================================================
+    // Dynamic Gas Price Advisory & Fee Buffer Calculator (#040)
+    // ========================================================================
+
+    /// Read-only contract query returning estimated CPU instructions, memory footprint,
+    /// and recommended congestion fee buffers for multi-payment payroll distribution.
+    pub fn estimate_payroll_resources(env: Env, recipient_count: u32) -> PayrollResourceEstimate {
+        estimate_payroll_resources_calc(&env, recipient_count)
+    }
 }
+
+/// Dynamic resource and fee estimation parameters for batch payroll calls (#040)
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PayrollResourceEstimate {
+    pub recipient_count: u32,
+    pub cpu_instructions: u64,
+    pub mem_bytes: u64,
+    pub min_fee_stroops: i128,
+    pub recommended_buffer_bps: u32,
+    pub total_recommended_fee_stroops: i128,
+}
+
+pub fn estimate_payroll_resources_calc(_env: &Env, recipient_count: u32) -> PayrollResourceEstimate {
+    let base_cpu: u64 = 850_000;
+    let base_mem: u64 = 250_000;
+    let base_fee_stroops: i128 = 50_000;
+
+    let per_recipient_cpu: u64 = 420_000;
+    let per_recipient_mem: u64 = 85_000;
+    let per_recipient_fee_stroops: i128 = 25_000;
+
+    let count_u64 = recipient_count as u64;
+    let cpu_instructions = base_cpu.saturating_add(per_recipient_cpu.saturating_mul(count_u64));
+    let mem_bytes = base_mem.saturating_add(per_recipient_mem.saturating_mul(count_u64));
+    let min_fee = base_fee_stroops.saturating_add(per_recipient_fee_stroops.saturating_mul(recipient_count as i128));
+
+    let buffer_bps: u32 = if recipient_count <= 10 {
+        1500
+    } else if recipient_count <= 30 {
+        2500
+    } else {
+        3500
+    };
+
+    let buffer_amount = (min_fee * (buffer_bps as i128)) / 10_000;
+    let total_recommended_fee = min_fee.saturating_add(buffer_amount);
+
+    PayrollResourceEstimate {
+        recipient_count,
+        cpu_instructions,
+        mem_bytes,
+        min_fee_stroops: min_fee,
+        recommended_buffer_bps: buffer_bps,
+        total_recommended_fee_stroops: total_recommended_fee,
+    }
+}
+
 
 // ============================================================================
 // Dispute Split Resolution (module-level for multisig reuse)
